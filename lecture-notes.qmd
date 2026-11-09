@@ -1,0 +1,490 @@
+---
+title: "Time series graphics"
+subtitle: "Week 2"
+lang: "en"
+toc-title: "Table of contents"
+language:
+  title-block-published: "Created"
+  section-title-references: "References"
+engine: markdown
+execute:
+  enabled: false
+citeproc: true
+references: [{"id": "r1", "type": "document", "title": "02 - Time series graphics.md"}]
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    number-sections: true
+    html-math-method: mathjax
+    reference-location: margin
+    citation-location: margin
+    embed-resources: false
+    anchor-sections: true
+    css: lecture-notes.css
+    include-in-header: notes-head.html
+    mermaid:
+      theme: neutral
+---
+
+::: {.callout-note title="What you will learn"}
+By the end of this page you should be able to:
+
+1. choose an appropriate time-series graphic for a question;
+2. distinguish trend, seasonal and cyclic patterns;
+3. use seasonal plots and seasonal subseries plots to see seasonality;
+4. read scatterplots, lag plots and autocorrelation plots;
+5. use the white-noise ACF confidence band to judge whether an autocorrelation pattern is compatible with white noise, and understand how this supports later model-checking discussions.
+:::
+
+## Why time-series graphics matter {#sec-why}
+
+A time series is not just a column of numbers: the order matters. A good graph can reveal patterns, unusual observations, changes over time, and relationships between variables [@r1]. In this course, those same graphics also prepare us for later tasks such as fitting models and communicating forecasts. In practice, the graph often tells you what question to ask next: *Is there a trend? Is the pattern seasonal? Is an apparent relationship linear? Are the autocorrelations compatible with white noise?*
+
+```{dot}
+//| label: fig-graphics-workflow
+//| fig-cap: "A practical graphics workflow for a time series. Blue boxes are plots; orange boxes are interpretation tasks."
+//| fig-alt: "Flowchart from raw time series through time plot, seasonal graphics, relationship graphics, lag and ACF diagnostics, and communication."
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  data [label="Ordered observations\n(y_1, ..., y_T)"];
+  timeplot [label="Time plot"];
+  patterns [label="Find patterns, unusual\nvalues, changes", fillcolor="#fff1d6", color="#d08b00"];
+  seasonal [label="Seasonal plot or\nsubseries plot"];
+  relationships [label="Scatterplot matrix\nfor variables"];
+  lag [label="Lag plots"];
+  acf [label="ACF plot"];
+  modelcheck [label="Compare ACF with\nwhite-noise band", fillcolor="#fff1d6", color="#d08b00"];
+  present [label="Present the story\non a time scale", fillcolor="#fff1d6", color="#d08b00"];
+
+  data -> timeplot;
+  timeplot -> patterns;
+  patterns -> seasonal [label="fixed period?"];
+  patterns -> relationships [label="other variables?"];
+  patterns -> lag [label="dependence over time?"];
+  lag -> acf;
+  acf -> modelcheck;
+  timeplot -> present;
+}
+```
+
+@fig-graphics-workflow is the roadmap for the lecture: start with the time axis, then add graphics that answer more specific questions.
+
+## Start with the time plot {#sec-time-plot}
+
+A **time plot** puts the observation value on the vertical axis and time on the horizontal axis. The reading uses time plots as the first graphical view of a series and says that plots help identify patterns, unusual observations, changes over time, and relationships between variables [@r1].
+
+### What to look for {#sec-look-for}
+
+Use the first time plot to scan for three broad patterns [@r1]:
+
+| Pattern | What it means in words | Visual clue |
+|---------|-------------------------|-------------|
+| **Trend** | A long-term increase or decrease; it need not be linear. | The baseline drifts upward or downward. |
+| **Seasonal** | A regular pattern at fixed, known intervals such as yearly, monthly, weekly or daily. | Peaks and troughs repeat at a known period. |
+| **Cyclic** | Rises and falls with no fixed frequency, often lasting two or more years and often tied to economic conditions. | Waves are visible, but their length changes. |
+
+: Three time-series patterns named in the reading {#tbl-patterns tbl-colwidths="[20,45,35]"}
+
+::: {.callout-warning title="Seasonal is not the same as cyclic"}
+A seasonal pattern has a fixed, known period. A cyclic pattern has rises and falls but no fixed frequency [@r1].
+:::
+
+### Interactive explorer: build a time plot (our example) {#sec-explorer}
+
+The next figure is an illustration, not data from the reading. Move the controls and watch how the same time plot can show trend, seasonality, both, or neither.
+
+```{ojs}
+//| echo: false
+viewof ts_controls = Inputs.form({
+  trend: Inputs.range([-0.8, 0.8], {value: 0.25, step: 0.05, label: "Trend strength"}),
+  amplitude: Inputs.range([0, 8], {value: 4, step: 0.5, label: "Seasonal amplitude"}),
+  noise: Inputs.range([0, 4], {value: 1.2, step: 0.2, label: "Extra non-seasonal movement"})
+})
+```
+
+```{ojs}
+//| echo: false
+//| label: fig-time-explorer
+//| fig-cap: "A synthetic time series showing how trend, a period-12 seasonal wave and extra non-seasonal movement change the time plot."
+//| fig-alt: "Interactive line chart with sliders for trend, seasonal amplitude, and irregular movement."
+ts_points = d3.range(1, 49).map((t) => ({
+  t,
+  y: 20 + ts_controls.trend * t + ts_controls.amplitude * Math.sin(2 * Math.PI * t / 12) + ts_controls.noise * Math.sin(2.35 * t + 0.4)
+}))
+
+Plot.plot({
+  height: 320,
+  x: {label: "time t"},
+  y: {label: "value y_t", grid: true},
+  marks: [
+    Plot.ruleY([20], {stroke: "#bbbbbb"}),
+    Plot.line(ts_points, {x: "t", y: "y", stroke: "steelblue", strokeWidth: 2}),
+    Plot.dot(ts_points, {x: "t", y: "y", fill: "steelblue", r: 2})
+  ]
+})
+```
+
+In @fig-time-explorer, a non-zero trend tilts the long-run level; a larger seasonal amplitude makes the period-12 wave clearer; extra non-seasonal movement makes that period-12 pattern harder to see.
+
+::: {#exm-first-read}
+## First read of a time plot (our example)
+Suppose the time plot in @fig-time-explorer uses trend strength $0.25$, seasonal amplitude $4$, and irregular movement $1.2$.
+
+**Step 1. Check long-run direction.** The baseline rises as $t$ increases, so the example contains an upward trend.
+
+**Step 2. Check repetition.** The wave repeats about every $12$ observations, so the example contains seasonality with period $12$.
+
+**Step 3. Check extra movement.** Points do not sit exactly on the period-12 wave, so there is additional non-seasonal movement too.
+
+**Check.** If you set seasonal amplitude to $0$, the period-12 wave disappears while the trend remains. That confirms the two features are different.
+:::
+
+::: {.callout-note title="Check yourself"}
+1. If monthly data have a repeating annual pattern, what seasonal period would you expect?
+2. If a series rises and falls in waves of unequal length, should you first call that seasonal or cyclic?
+:::
+
+::: {.callout-note collapse="true" title="Answers"}
+1. $12$, because there are 12 months in a year.
+2. Cyclic, because the frequency is not fixed. If the period becomes fixed and known, then it is seasonal.
+:::
+
+## Choose the seasonal scale {#sec-seasonal-scale}
+
+Seasonality requires a time unit and a period. The reading lists common seasonal periods for different data frequencies [@r1]. A few entries are enough to build intuition:
+
+| Data frequency | Natural seasonal period | Example interpretation |
+|----------------|-------------------------|------------------------|
+| Quarterly | $4$ per year | Q1, Q2, Q3, Q4 repeat each year. |
+| Monthly | $12$ per year | January through December repeat each year. |
+| Weekly | $52$ per year | Week-of-year pattern. |
+| Daily | $7$ per week or $365.25$ per year | Day-of-week or day-of-year pattern. |
+| Hourly | $24$ per day or $168$ per week | Hour-of-day or hour-of-week pattern. |
+
+: Common seasonal periods from the reading {#tbl-seasonal-periods tbl-colwidths="[25,30,45]"}
+
+A single series can have more than one plausible seasonal scale. For example, daily data may be explored with a weekly period ($7$) or a yearly period ($365.25$), and hourly data may be explored with daily ($24$), weekly ($168$), or yearly ($8766$) periods [@r1]. The reading's "multiple seasonal periods" examples are a reminder to choose the period from the question, not only from the data frequency.
+
+### Seasonal plots {#sec-seasonal-plots}
+
+A **seasonal plot** plots the data against time *within* each seasonal period. It is useful for identifying seasonal patterns and anomalies, and can be used for multiple seasonal periods [@r1].
+
+```{dot}
+//| label: fig-seasonal-rearrange
+//| fig-cap: "How a seasonal plot rearranges a series: the same observations are grouped by position inside each season."
+//| fig-alt: "Diagram showing a chronological series split into years and arranged by quarter within each year."
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  chron [label="Chronological order\nYear 1: Q1 Q2 Q3 Q4\nYear 2: Q1 Q2 Q3 Q4"];
+  split [label="Split by seasonal period\n(period = 4)", fillcolor="#fff1d6", color="#d08b00"];
+  seasonal [label="Seasonal plot\nx-axis: Q1, Q2, Q3, Q4\nline/color: year"];
+  compare [label="Compare the same\nseason across years", fillcolor="#fff1d6", color="#d08b00"];
+
+  chron -> split -> seasonal -> compare;
+}
+```
+
+@fig-seasonal-rearrange shows the key move: keep the values, but change the horizontal axis from absolute time to within-season time.
+
+### Seasonal subseries plots {#sec-subseries}
+
+A **seasonal subseries plot** collects the data for each season together as separate time series. The reading says this makes the underlying seasonal pattern clear and lets changes in seasonality over time be visualized [@r1].
+
+| Plot | Horizontal comparison | Best question |
+|------|------------------------|---------------|
+| Time plot | Observation time | What happens overall? |
+| Seasonal plot | Position within the season | Do years or cycles have the same within-season shape? |
+| Seasonal subseries plot | Time within one named season | Is January changing differently from July? |
+
+: Time plot, seasonal plot and seasonal subseries plot compared {#tbl-seasonal-graphics tbl-colwidths="[25,35,40]"}
+
+::: {#exm-seasonal-choice}
+## Choosing a seasonal graphic (our example)
+You have quarterly tourism data and suspect Q3 behaves differently from the other quarters.
+
+**Step 1. Identify the period.** Quarterly data have period $4$ per year, from @tbl-seasonal-periods.
+
+**Step 2. Start with a time plot.** This checks the overall trend and unusual observations.
+
+**Step 3. Add a seasonal plot.** Put Q1--Q4 on the x-axis and draw one line per year to see the repeated quarterly shape.
+
+**Step 4. Add a seasonal subseries plot.** Collect all Q3 values together to see whether Q3 is changing over time.
+
+**Check.** The seasonal plot answers "within a year, which quarter is high?" The subseries plot answers "within a quarter, is the level changing across years?"
+:::
+
+::: {.callout-tip title="Try it"}
+For hourly data, which plot would you use first to compare Monday 09:00 with Tuesday 09:00 patterns: a simple time plot, a seasonal plot with a daily period, or a seasonal subseries plot with an hour-of-week grouping?
+:::
+
+::: {.callout-note collapse="true" title="Solution"}
+Use a seasonal subseries-style grouping by hour of week if the goal is to compare named positions such as Monday 09:00 and Tuesday 09:00 over time. A daily seasonal plot can reveal hour-of-day shape, but it mixes weekdays unless you also separate by day.
+:::
+
+## Relationships between variables: scatterplots and correlation {#sec-relationships}
+
+When there is more than one variable, the reading introduces scatterplots, correlation, and scatterplot matrices [@r1]. A **scatterplot** puts one variable on each axis; a **scatterplot matrix** repeats this idea for several pairs of variables.
+
+The reading defines correlation as a measure of the extent of a linear relationship between two variables [@r1]. For paired observations $(x_t,y_t)$, the sample correlation is
+
+$$
+r=\frac{\sum\left(x_t-\bar{x}\right)\left(y_t-\bar{y}\right)}{\sqrt{\sum\left(x_t-\bar{x}\right)^2} \sqrt{\sum\left(y_t-\bar{y}\right)^2}}.
+$$ {#eq-correlation}
+
+Here $x_t$ and $y_t$ are the paired values at time $t$, while $\bar{x}$ and $\bar{y}$ are their sample means.
+
+::: {.callout-warning title="Correlation sees linear association"}
+The reading illustrates that correlation measures linear relationship; therefore a scatterplot is still needed to see shape, outliers, and non-linear structure [@r1].
+:::
+
+::: {#exm-correlation}
+## Calculating a small correlation (our example)
+Take three paired observations: $(x,y)=(1,2),(2,4),(3,5)$.
+
+**Step 1. Compute means.** $\bar{x}=2$ and $\bar{y}=\frac{11}{3}$.
+
+**Step 2. Compute centered values.** For $x$: $-1,0,1$. For $y$: $-\frac{5}{3},\frac{1}{3},\frac{4}{3}$.
+
+**Step 3. Use @eq-correlation.**
+
+$$
+\begin{aligned}
+r
+&=\frac{(-1)(-5/3)+0(1/3)+1(4/3)}{\sqrt{(-1)^2+0^2+1^2}\sqrt{(-5/3)^2+(1/3)^2+(4/3)^2}} \\
+&=\frac{3}{\sqrt{2}\sqrt{42/9}}
+\approx 0.982.
+\end{aligned}
+$$
+
+**Check.** The value is close to $1$, matching the nearly straight increasing pattern of the three points.
+:::
+
+::: {.callout-note title="Check yourself"}
+If two variables have $r\approx 0$, what should you do before concluding there is "no relationship"?
+:::
+
+::: {.callout-note collapse="true" title="Answer"}
+Look at the scatterplot. A near-zero correlation rules out strong *linear* association, but the plot may show a curved pattern or unusual observations.
+:::
+
+## Dependence over time: lag plots and autocorrelation {#sec-acf}
+
+A time series can be related to its own past. The reading introduces **lag plots**: each graph shows $y_t$ against $y_{t-k}$ for lag $k$ [@r1]. The autocorrelations are the correlations associated with these lag plots; for example, $r_1$ is the correlation between $y_t$ and $y_{t-1}$, and $r_2$ is the correlation between $y_t$ and $y_{t-2}$ [@r1].
+
+For a series $y_1,\ldots,y_T$, the reading gives the autocorrelation at lag $k$ as
+
+$$
+r_k=\frac{\sum_{i\in\{k+1,\ldots,T\}}\left(y_i-\bar{y}\right)\left(y_{i-k}-\bar{y}\right)}{\sum_{i\in\{1,\ldots,T\}}\left(y_i-\bar{y}\right)^2},
+$$ {#eq-acf}
+
+where $\bar{y}$ is the sample mean and $T$ is the length of the series [@r1].
+
+```{dot}
+//| label: fig-lag-acf
+//| fig-cap: "Lag plots and the ACF are two views of the same idea: compare the series with its shifted copy."
+//| fig-alt: "Diagram showing y_t and a lagged y_{t-k} feeding a lag plot, then the correlation r_k, then an ACF plot over many lags."
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  current [label="Current values\ny_t"];
+  lagged [label="Lagged values\ny_{t-k}"];
+  lagplot [label="Lag plot\ny_t vs y_{t-k}", fillcolor="#fff1d6", color="#d08b00"];
+  corr [label="Correlation\nr_k"];
+  acf [label="ACF plot\nbar for each lag k"];
+
+  current -> lagplot;
+  lagged -> lagplot;
+  lagplot -> corr;
+  corr -> acf [label="repeat for k = 1, 2, ..."];
+}
+```
+
+### How to read an ACF plot {#sec-read-acf}
+
+The reading gives three key rules [@r1]:
+
+1. when the data have trend, autocorrelations for small lags tend to be large and positive;
+2. when the data are seasonal, autocorrelations tend to be large and positive at seasonal lags, such as $12$ and $24$ for monthly data with yearly seasonality;
+3. when the data are both trended and seasonal, autocorrelations tend to be large and positive at small lags and at seasonal lags.
+
+::: {#exm-acf-reading}
+## Reading an ACF pattern (our example)
+Suppose monthly data have large positive ACF bars at lags $1$, $2$, $12$, and $24$.
+
+**Step 1. Interpret small lags.** Large positive values at $1$ and $2$ suggest nearby observations are similar, which is consistent with trend.
+
+**Step 2. Interpret seasonal lags.** Large positive values at $12$ and $24$ match annual seasonality in monthly data.
+
+**Step 3. Combine the evidence.** The ACF pattern is consistent with a trended and seasonal series.
+
+**Check.** The seasonal period is $12$, so the repeated ACF peaks at $12$ and $24$ are exactly where @tbl-seasonal-periods tells us to look.
+:::
+
+::: {.callout-tip title="Try it"}
+Weekly data show strong positive autocorrelation at lags $52$ and $104$. What pattern does this suggest?
+:::
+
+::: {.callout-note collapse="true" title="Solution"}
+It suggests yearly seasonality in weekly data, because the seasonal period is about $52$ weeks, and $104$ is two such periods.
+:::
+
+## White noise and the ACF confidence band {#sec-white-noise}
+
+The reading shows white noise and its ACF, then states that for white-noise data the sampling distribution of $r_k$ is asymptotically $N(0,1/T)$ [@r1]. Therefore an approximate 95% confidence interval for $r_k$ is
+
+$$
+\pm \frac{1.96}{\sqrt{T}},
+$$ {#eq-acf-ci}
+
+where $T$ is the length of the series [@r1].
+
+**Syllabus bridge.** The reading-supported fact is the white-noise ACF distribution and band in @eq-acf-ci. When later lectures ask whether a fitted model has left time dependence behind, this is the graphical ingredient to remember: an ACF pattern compatible with white noise should have most bars inside the approximate band. This page does not add a full residual-diagnostics procedure because the reading does not give one.
+
+::: {#exm-ci}
+## ACF band width (our example)
+A series has length $T=100$.
+
+**Step 1. Substitute into @eq-acf-ci.**
+
+$$
+\frac{1.96}{\sqrt{100}}=\frac{1.96}{10}=0.196.
+$$
+
+**Step 2. Interpret.** The approximate 95% white-noise band is from $-0.196$ to $0.196$.
+
+**Step 3. Use visually.** A lag with $r_k=0.40$ lies outside this band; a lag with $r_k=0.05$ lies inside it.
+
+**Check.** If $T$ increases, $\sqrt{T}$ increases, so the band becomes narrower.
+:::
+
+::: {.callout-note title="Check yourself"}
+For white noise with $T=400$, what is the approximate 95% ACF band?
+:::
+
+::: {.callout-note collapse="true" title="Answer"}
+$1.96/\sqrt{400}=1.96/20=0.098$, so the band is approximately $[-0.098,0.098]$.
+:::
+
+## Presenting forecasting results starts with the same graphics {#sec-forecast-presentation}
+
+The syllabus asks you to present forecasting results. This reading does not give a separate forecast-display recipe. What it does give is the graphical vocabulary that a later forecast display will reuse: time plots, seasonal periods, anomalies, relationships and ACF checks [@r1]. The course-level bridge is simple: when communicating future values, keep the historical time scale and the relevant patterns visible, but treat this as an application of the reading's graphics rather than a forecast rule stated in the reading.
+
+```{dot}
+//| label: fig-forecast-bridge
+//| fig-cap: "How the graphics in this lecture prepare a forecast presentation."
+//| fig-alt: "Concept map connecting exploration, model checking and forecast communication."
+digraph G {
+  rankdir=TB;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  explore [label="Explore\ntime plot, seasonal plots"];
+  features [label="Name features\ntrend, seasonality, cycles"];
+  check [label="Check dependence\nlag plots and ACF"];
+  communicate [label="Communicate forecasts\non the same time scale", fillcolor="#fff1d6", color="#d08b00"];
+
+  explore -> features;
+  features -> check;
+  check -> communicate;
+  explore -> communicate [label="show history clearly"];
+}
+```
+
+@fig-forecast-bridge is deliberately conservative: it connects this lecture's plots to forecast communication without adding methods that are not in the reading.
+
+::: {.callout-note title="Check yourself"}
+You are preparing to communicate future monthly values for a series with clear annual seasonality. Which feature from this lecture should remain visible in the historical part of the display?
+:::
+
+::: {.callout-note collapse="true" title="Answer"}
+Keep the time scale and the annual seasonal pattern visible. Monthly data with yearly seasonality have period $12$, so the viewer should be able to compare future values with the repeating pattern seen in the historical time plot or seasonal graphics.
+:::
+
+## Putting it together {#sec-putting-it-together}
+
+```{dot}
+//| label: fig-concept-map
+//| fig-cap: "Concept map for time-series graphics."
+//| fig-alt: "Concept map linking time plots, seasonal graphics, scatterplots, lag plots, ACF, trend, seasonality, cyclic behavior and white noise."
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  graphics [label="Time-series graphics"];
+  time [label="Time plot"];
+  seasonal [label="Seasonal graphics"];
+  scatter [label="Scatterplots and\nscatterplot matrices"];
+  lag [label="Lag plots"];
+  acf [label="ACF plot"];
+  trend [label="Trend"];
+  season [label="Seasonality"];
+  cycle [label="Cyclic movement"];
+  corr [label="Correlation"];
+  white [label="White-noise band\n±1.96/sqrt(T)"];
+
+  graphics -> time;
+  graphics -> seasonal;
+  graphics -> scatter;
+  graphics -> lag;
+  lag -> acf;
+  time -> trend;
+  time -> season;
+  time -> cycle;
+  seasonal -> season;
+  scatter -> corr;
+  acf -> trend [label="large small lags"];
+  acf -> season [label="large seasonal lags"];
+  acf -> white [label="compare bars"];
+}
+```
+
+A good workflow is to move from broad to specific: use a time plot first, seasonal graphics when the period matters, scatterplots when variables relate, and lag/ACF graphics when dependence over time matters.
+
+## Summary {#sec-summary}
+
+::: {.callout-important title="What to remember"}
+- Time plots are the starting point: they reveal patterns, unusual observations and changes over time.
+- Trend is long-term increase or decrease; seasonality repeats at a fixed known period; cyclic movement does not have a fixed frequency.
+- Seasonal plots compare positions within a season; seasonal subseries plots collect each season as its own small time series.
+- Correlation measures linear relationship, so always read it with a scatterplot.
+- Lag plots compare $y_t$ with $y_{t-k}$; the ACF records those correlations across many lags.
+- Trend tends to create large positive ACF at small lags; seasonality tends to create large positive ACF at seasonal lags.
+- For white noise, an approximate 95% ACF band is $\pm 1.96/\sqrt{T}$.
+:::
+
+## Key terms {#sec-key-terms}
+
+| Term | Meaning |
+|------|---------|
+| Time plot | A plot of a series value against time; the first view for patterns and unusual observations. |
+| Trend | Long-term increase or decrease in the data; not necessarily linear. |
+| Seasonal pattern | A regular pattern at fixed, known intervals such as yearly, monthly, weekly or daily. |
+| Cyclic pattern | Rises and falls without fixed frequency, often lasting two or more years. |
+| Seasonal period | The number of observations in one full repeating seasonal cycle, such as $12$ for monthly yearly seasonality. |
+| Seasonal plot | A plot against time within each seasonal period, useful for seeing seasonal patterns and anomalies. |
+| Seasonal subseries plot | A display that collects each season together as a separate time series to show seasonal pattern and change. |
+| Scatterplot | A two-variable plot used to see relationships between variables. |
+| Correlation | A measure of the extent of linear relationship between two variables. |
+| Lag plot | A plot of $y_t$ against $y_{t-k}$ for a chosen lag $k$. |
+| Autocorrelation | The correlation between a series and a lagged version of itself. |
+| ACF plot | A plot of autocorrelations $r_k$ across several lags. |
+| White noise | The benchmark series used in the reading for ACF confidence bands; its $r_k$ has approximate distribution $N(0,1/T)$. |
+
+: Key terms for time-series graphics {#tbl-key-terms tbl-colwidths="[28,72]"}
+

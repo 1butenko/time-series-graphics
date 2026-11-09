@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time series graphics</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$']], displayMath: [['\\[', '\\]']], tags: 'none' },
+  chtml: { displayAlign: 'center' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml-full.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6.16/dist/plot.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.4.0/lib/viz-standalone.js"></script>
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #212529;
+  --muted: #6c757d;
+  --link: #2780e3;
+  --border: #dee2e6;
+  --code-bg: #f8f9fa;
+  --note: #0d6efd;
+  --note-bg: #e7f1ff;
+  --warn: #ffc107;
+  --warn-bg: #fff8e1;
+  --tip: #198754;
+  --tip-bg: #e8f5ee;
+  --important: #dc3545;
+  --important-bg: #fdecee;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 820px);
+  gap: 48px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+nav#toc {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  font-size: 14px;
+  border-right: 1px solid var(--border);
+  padding-right: 16px;
+}
+nav#toc h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+nav#toc ul { list-style: none; padding-left: 0; margin: 0; }
+nav#toc ul ul { padding-left: 14px; }
+nav#toc li { margin: 3px 0; }
+nav#toc a { color: var(--muted); display: block; padding: 2px 6px; border-left: 2px solid transparent; }
+nav#toc a.active { color: var(--link); border-left-color: var(--link); }
+nav#toc a:hover { color: var(--text); text-decoration: none; }
+
+header.title-block { margin-bottom: 28px; }
+header.title-block h1 { font-size: 2.4rem; margin: 0 0 4px; line-height: 1.2; font-weight: 600; }
+header.title-block .subtitle { font-size: 1.3rem; color: var(--muted); margin: 0; }
+
+main h2 {
+  font-size: 1.65rem;
+  font-weight: 600;
+  margin: 2.4rem 0 1rem;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+main h3 { font-size: 1.3rem; font-weight: 600; margin: 1.8rem 0 0.8rem; }
+.header-section-number { color: var(--muted); margin-right: 0.4em; }
+.anchor { opacity: 0; margin-left: 0.3em; font-size: 0.8em; color: var(--muted); }
+h2:hover .anchor, h3:hover .anchor { opacity: 1; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+th, td { text-align: left; padding: 8px 10px; vertical-align: top; border-bottom: 1px solid var(--border); }
+thead th { border-bottom: 2px solid var(--text); }
+.table-wrap { overflow-x: auto; }
+figure { margin: 1.6rem 0; }
+figcaption, .table-caption { color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
+.table-caption { text-align: left; margin: 0 0 1.4rem; }
+.diagram { overflow-x: auto; text-align: center; }
+.diagram svg { max-width: 100%; height: auto; }
+
+.callout {
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--c);
+  border-radius: 6px;
+  margin: 1.4rem 0;
+  overflow: hidden;
+}
+.callout > .callout-header, .callout > summary {
+  background: var(--cbg);
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.callout > summary { cursor: pointer; list-style: none; }
+.callout > summary::-webkit-details-marker { display: none; }
+.callout > summary::after { content: "▸"; margin-left: auto; transition: transform .15s; }
+.callout[open] > summary::after { transform: rotate(90deg); }
+.callout-body { padding: 4px 16px; }
+.callout-icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--c); color: #fff;
+  font-size: 12px; line-height: 18px; text-align: center; flex: none;
+}
+.callout-note { --c: var(--note); --cbg: var(--note-bg); }
+.callout-warning { --c: var(--warn); --cbg: var(--warn-bg); }
+.callout-warning .callout-icon { color: #212529; }
+.callout-tip { --c: var(--tip); --cbg: var(--tip-bg); }
+.callout-important { --c: var(--important); --cbg: var(--important-bg); }
+
+.theorem {
+  margin: 1.4rem 0;
+  padding: 2px 18px;
+  border-left: 3px solid var(--border);
+}
+.theorem-title { font-weight: 600; }
+.math-display { overflow-x: auto; overflow-y: hidden; }
+
+.ojs-inputs { display: grid; gap: 8px; margin: 1rem 0; font-size: 0.95rem; }
+.ojs-inputs label { display: grid; grid-template-columns: 240px 1fr 50px; align-items: center; gap: 12px; }
+.ojs-inputs input[type=range] { width: 100%; }
+.ojs-inputs output { font-variant-numeric: tabular-nums; text-align: right; }
+#ts-plot svg { max-width: 100%; height: auto; }
+
+.citation { white-space: nowrap; }
+#refs .csl-entry { padding-left: 2em; text-indent: -2em; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; gap: 16px; padding: 20px 16px 60px; }
+  nav#toc { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 12px; }
+  .ojs-inputs label { grid-template-columns: 1fr 50px; }
+  .ojs-inputs label span { grid-column: 1 / -1; }
+  header.title-block h1 { font-size: 1.9rem; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav id="toc">
+  <h2>Table of contents</h2>
+  <ul>
+    <li><a href="#sec-why"><span class="header-section-number">1</span> Why time-series graphics matter</a></li>
+    <li><a href="#sec-time-plot"><span class="header-section-number">2</span> Start with the time plot</a>
+      <ul>
+        <li><a href="#sec-look-for"><span class="header-section-number">2.1</span> What to look for</a></li>
+        <li><a href="#sec-explorer"><span class="header-section-number">2.2</span> Interactive explorer: build a time plot (our example)</a></li>
+      </ul>
+    </li>
+    <li><a href="#sec-seasonal-scale"><span class="header-section-number">3</span> Choose the seasonal scale</a>
+      <ul>
+        <li><a href="#sec-seasonal-plots"><span class="header-section-number">3.1</span> Seasonal plots</a></li>
+        <li><a href="#sec-subseries"><span class="header-section-number">3.2</span> Seasonal subseries plots</a></li>
+      </ul>
+    </li>
+    <li><a href="#sec-relationships"><span class="header-section-number">4</span> Relationships between variables: scatterplots and correlation</a></li>
+    <li><a href="#sec-acf"><span class="header-section-number">5</span> Dependence over time: lag plots and autocorrelation</a>
+      <ul>
+        <li><a href="#sec-read-acf"><span class="header-section-number">5.1</span> How to read an ACF plot</a></li>
+      </ul>
+    </li>
+    <li><a href="#sec-white-noise"><span class="header-section-number">6</span> White noise and the ACF confidence band</a></li>
+    <li><a href="#sec-forecast-presentation"><span class="header-section-number">7</span> Presenting forecasting results starts with the same graphics</a></li>
+    <li><a href="#sec-putting-it-together"><span class="header-section-number">8</span> Putting it together</a></li>
+    <li><a href="#sec-summary"><span class="header-section-number">9</span> Summary</a></li>
+    <li><a href="#sec-key-terms"><span class="header-section-number">10</span> Key terms</a></li>
+    <li><a href="#refs">References</a></li>
+  </ul>
+</nav>
+
+<main>
+<header class="title-block">
+  <h1>Time series graphics</h1>
+  <p class="subtitle">Week 2</p>
+</header>
+
+<div class="callout callout-note">
+  <div class="callout-header"><span class="callout-icon">i</span>What you will learn</div>
+  <div class="callout-body">
+    <p>By the end of this page you should be able to:</p>
+    <ol>
+      <li>choose an appropriate time-series graphic for a question;</li>
+      <li>distinguish trend, seasonal and cyclic patterns;</li>
+      <li>use seasonal plots and seasonal subseries plots to see seasonality;</li>
+      <li>read scatterplots, lag plots and autocorrelation plots;</li>
+      <li>use the white-noise ACF confidence band to judge whether an autocorrelation pattern is compatible with white noise, and understand how this supports later model-checking discussions.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 1 ============ -->
+<section id="sec-why">
+<h2><span class="header-section-number">1</span> Why time-series graphics matter<a class="anchor" href="#sec-why">#</a></h2>
+<p>A time series is not just a column of numbers: the order matters. A good graph can reveal patterns, unusual observations, changes over time, and relationships between variables <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. In this course, those same graphics also prepare us for later tasks such as fitting models and communicating forecasts. In practice, the graph often tells you what question to ask next: <em>Is there a trend? Is the pattern seasonal? Is an apparent relationship linear? Are the autocorrelations compatible with white noise?</em></p>
+
+<figure id="fig-graphics-workflow">
+  <div class="diagram" role="img" aria-label="Flowchart from raw time series through time plot, seasonal graphics, relationship graphics, lag and ACF diagnostics, and communication.">
+<script type="text/vnd.graphviz">
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  data [label="Ordered observations\n(y_1, ..., y_T)"];
+  timeplot [label="Time plot"];
+  patterns [label="Find patterns, unusual\nvalues, changes", fillcolor="#fff1d6", color="#d08b00"];
+  seasonal [label="Seasonal plot or\nsubseries plot"];
+  relationships [label="Scatterplot matrix\nfor variables"];
+  lag [label="Lag plots"];
+  acf [label="ACF plot"];
+  modelcheck [label="Compare ACF with\nwhite-noise band", fillcolor="#fff1d6", color="#d08b00"];
+  present [label="Present the story\non a time scale", fillcolor="#fff1d6", color="#d08b00"];
+
+  data -> timeplot;
+  timeplot -> patterns;
+  patterns -> seasonal [label="fixed period?"];
+  patterns -> relationships [label="other variables?"];
+  patterns -> lag [label="dependence over time?"];
+  lag -> acf;
+  acf -> modelcheck;
+  timeplot -> present;
+}
+</script>
+  </div>
+  <figcaption>Figure&nbsp;1: A practical graphics workflow for a time series. Blue boxes are plots; orange boxes are interpretation tasks.</figcaption>
+</figure>
+
+<p><a href="#fig-graphics-workflow">Figure&nbsp;1</a> is the roadmap for the lecture: start with the time axis, then add graphics that answer more specific questions.</p>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="sec-time-plot">
+<h2><span class="header-section-number">2</span> Start with the time plot<a class="anchor" href="#sec-time-plot">#</a></h2>
+<p>A <strong>time plot</strong> puts the observation value on the vertical axis and time on the horizontal axis. The reading uses time plots as the first graphical view of a series and says that plots help identify patterns, unusual observations, changes over time, and relationships between variables <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+
+<section id="sec-look-for">
+<h3><span class="header-section-number">2.1</span> What to look for<a class="anchor" href="#sec-look-for">#</a></h3>
+<p>Use the first time plot to scan for three broad patterns <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>:</p>
+
+<div id="tbl-patterns">
+<div class="table-wrap">
+<table>
+  <colgroup><col style="width:20%"><col style="width:45%"><col style="width:35%"></colgroup>
+  <thead><tr><th>Pattern</th><th>What it means in words</th><th>Visual clue</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Trend</strong></td><td>A long-term increase or decrease; it need not be linear.</td><td>The baseline drifts upward or downward.</td></tr>
+    <tr><td><strong>Seasonal</strong></td><td>A regular pattern at fixed, known intervals such as yearly, monthly, weekly or daily.</td><td>Peaks and troughs repeat at a known period.</td></tr>
+    <tr><td><strong>Cyclic</strong></td><td>Rises and falls with no fixed frequency, often lasting two or more years and often tied to economic conditions.</td><td>Waves are visible, but their length changes.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="table-caption">Table&nbsp;1: Three time-series patterns named in the reading</p>
+</div>
+
+<div class="callout callout-warning">
+  <div class="callout-header"><span class="callout-icon">!</span>Seasonal is not the same as cyclic</div>
+  <div class="callout-body">
+    <p>A seasonal pattern has a fixed, known period. A cyclic pattern has rises and falls but no fixed frequency <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+  </div>
+</div>
+</section>
+
+<section id="sec-explorer">
+<h3><span class="header-section-number">2.2</span> Interactive explorer: build a time plot (our example)<a class="anchor" href="#sec-explorer">#</a></h3>
+<p>The next figure is an illustration, not data from the reading. Move the controls and watch how the same time plot can show trend, seasonality, both, or neither.</p>
+
+<form class="ojs-inputs" id="ts-controls" onsubmit="return false">
+  <label><span>Trend strength</span><input type="range" name="trend" min="-0.8" max="0.8" step="0.05" value="0.25"><output>0.25</output></label>
+  <label><span>Seasonal amplitude</span><input type="range" name="amplitude" min="0" max="8" step="0.5" value="4"><output>4</output></label>
+  <label><span>Extra non-seasonal movement</span><input type="range" name="noise" min="0" max="4" step="0.2" value="1.2"><output>1.2</output></label>
+</form>
+
+<figure id="fig-time-explorer">
+  <div id="ts-plot" role="img" aria-label="Interactive line chart with sliders for trend, seasonal amplitude, and irregular movement."></div>
+  <figcaption>Figure&nbsp;2: A synthetic time series showing how trend, a period-12 seasonal wave and extra non-seasonal movement change the time plot.</figcaption>
+</figure>
+
+<p>In <a href="#fig-time-explorer">Figure&nbsp;2</a>, a non-zero trend tilts the long-run level; a larger seasonal amplitude makes the period-12 wave clearer; extra non-seasonal movement makes that period-12 pattern harder to see.</p>
+
+<div class="theorem" id="exm-first-read">
+  <p><span class="theorem-title">Example 1 (First read of a time plot (our example))</span> Suppose the time plot in <a href="#fig-time-explorer">Figure&nbsp;2</a> uses trend strength $0.25$, seasonal amplitude $4$, and irregular movement $1.2$.</p>
+  <p><strong>Step 1. Check long-run direction.</strong> The baseline rises as $t$ increases, so the example contains an upward trend.</p>
+  <p><strong>Step 2. Check repetition.</strong> The wave repeats about every $12$ observations, so the example contains seasonality with period $12$.</p>
+  <p><strong>Step 3. Check extra movement.</strong> Points do not sit exactly on the period-12 wave, so there is additional non-seasonal movement too.</p>
+  <p><strong>Check.</strong> If you set seasonal amplitude to $0$, the period-12 wave disappears while the trend remains. That confirms the two features are different.</p>
+</div>
+
+<div class="callout callout-note">
+  <div class="callout-header"><span class="callout-icon">i</span>Check yourself</div>
+  <div class="callout-body">
+    <ol>
+      <li>If monthly data have a repeating annual pattern, what seasonal period would you expect?</li>
+      <li>If a series rises and falls in waves of unequal length, should you first call that seasonal or cyclic?</li>
+    </ol>
+  </div>
+</div>
+
+<details class="callout callout-note">
+  <summary><span class="callout-icon">i</span>Answers</summary>
+  <div class="callout-body">
+    <ol>
+      <li>$12$, because there are 12 months in a year.</li>
+      <li>Cyclic, because the frequency is not fixed. If the period becomes fixed and known, then it is seasonal.</li>
+    </ol>
+  </div>
+</details>
+</section>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="sec-seasonal-scale">
+<h2><span class="header-section-number">3</span> Choose the seasonal scale<a class="anchor" href="#sec-seasonal-scale">#</a></h2>
+<p>Seasonality requires a time unit and a period. The reading lists common seasonal periods for different data frequencies <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. A few entries are enough to build intuition:</p>
+
+<div id="tbl-seasonal-periods">
+<div class="table-wrap">
+<table>
+  <colgroup><col style="width:25%"><col style="width:30%"><col style="width:45%"></colgroup>
+  <thead><tr><th>Data frequency</th><th>Natural seasonal period</th><th>Example interpretation</th></tr></thead>
+  <tbody>
+    <tr><td>Quarterly</td><td>$4$ per year</td><td>Q1, Q2, Q3, Q4 repeat each year.</td></tr>
+    <tr><td>Monthly</td><td>$12$ per year</td><td>January through December repeat each year.</td></tr>
+    <tr><td>Weekly</td><td>$52$ per year</td><td>Week-of-year pattern.</td></tr>
+    <tr><td>Daily</td><td>$7$ per week or $365.25$ per year</td><td>Day-of-week or day-of-year pattern.</td></tr>
+    <tr><td>Hourly</td><td>$24$ per day or $168$ per week</td><td>Hour-of-day or hour-of-week pattern.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="table-caption">Table&nbsp;2: Common seasonal periods from the reading</p>
+</div>
+
+<p>A single series can have more than one plausible seasonal scale. For example, daily data may be explored with a weekly period ($7$) or a yearly period ($365.25$), and hourly data may be explored with daily ($24$), weekly ($168$), or yearly ($8766$) periods <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. The reading’s “multiple seasonal periods” examples are a reminder to choose the period from the question, not only from the data frequency.</p>
+
+<section id="sec-seasonal-plots">
+<h3><span class="header-section-number">3.1</span> Seasonal plots<a class="anchor" href="#sec-seasonal-plots">#</a></h3>
+<p>A <strong>seasonal plot</strong> plots the data against time <em>within</em> each seasonal period. It is useful for identifying seasonal patterns and anomalies, and can be used for multiple seasonal periods <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+
+<figure id="fig-seasonal-rearrange">
+  <div class="diagram" role="img" aria-label="Diagram showing a chronological series split into years and arranged by quarter within each year.">
+<script type="text/vnd.graphviz">
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  chron [label="Chronological order\nYear 1: Q1 Q2 Q3 Q4\nYear 2: Q1 Q2 Q3 Q4"];
+  split [label="Split by seasonal period\n(period = 4)", fillcolor="#fff1d6", color="#d08b00"];
+  seasonal [label="Seasonal plot\nx-axis: Q1, Q2, Q3, Q4\nline/color: year"];
+  compare [label="Compare the same\nseason across years", fillcolor="#fff1d6", color="#d08b00"];
+
+  chron -> split -> seasonal -> compare;
+}
+</script>
+  </div>
+  <figcaption>Figure&nbsp;3: How a seasonal plot rearranges a series: the same observations are grouped by position inside each season.</figcaption>
+</figure>
+
+<p><a href="#fig-seasonal-rearrange">Figure&nbsp;3</a> shows the key move: keep the values, but change the horizontal axis from absolute time to within-season time.</p>
+</section>
+
+<section id="sec-subseries">
+<h3><span class="header-section-number">3.2</span> Seasonal subseries plots<a class="anchor" href="#sec-subseries">#</a></h3>
+<p>A <strong>seasonal subseries plot</strong> collects the data for each season together as separate time series. The reading says this makes the underlying seasonal pattern clear and lets changes in seasonality over time be visualized <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+
+<div id="tbl-seasonal-graphics">
+<div class="table-wrap">
+<table>
+  <colgroup><col style="width:25%"><col style="width:35%"><col style="width:40%"></colgroup>
+  <thead><tr><th>Plot</th><th>Horizontal comparison</th><th>Best question</th></tr></thead>
+  <tbody>
+    <tr><td>Time plot</td><td>Observation time</td><td>What happens overall?</td></tr>
+    <tr><td>Seasonal plot</td><td>Position within the season</td><td>Do years or cycles have the same within-season shape?</td></tr>
+    <tr><td>Seasonal subseries plot</td><td>Time within one named season</td><td>Is January changing differently from July?</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="table-caption">Table&nbsp;3: Time plot, seasonal plot and seasonal subseries plot compared</p>
+</div>
+
+<div class="theorem" id="exm-seasonal-choice">
+  <p><span class="theorem-title">Example 2 (Choosing a seasonal graphic (our example))</span> You have quarterly tourism data and suspect Q3 behaves differently from the other quarters.</p>
+  <p><strong>Step 1. Identify the period.</strong> Quarterly data have period $4$ per year, from <a href="#tbl-seasonal-periods">Table&nbsp;2</a>.</p>
+  <p><strong>Step 2. Start with a time plot.</strong> This checks the overall trend and unusual observations.</p>
+  <p><strong>Step 3. Add a seasonal plot.</strong> Put Q1–Q4 on the x-axis and draw one line per year to see the repeated quarterly shape.</p>
+  <p><strong>Step 4. Add a seasonal subseries plot.</strong> Collect all Q3 values together to see whether Q3 is changing over time.</p>
+  <p><strong>Check.</strong> The seasonal plot answers “within a year, which quarter is high?” The subseries plot answers “within a quarter, is the level changing across years?”</p>
+</div>
+
+<div class="callout callout-tip">
+  <div class="callout-header"><span class="callout-icon">✓</span>Try it</div>
+  <div class="callout-body">
+    <p>For hourly data, which plot would you use first to compare Monday 09:00 with Tuesday 09:00 patterns: a simple time plot, a seasonal plot with a daily period, or a seasonal subseries plot with an hour-of-week grouping?</p>
+  </div>
+</div>
+
+<details class="callout callout-note">
+  <summary><span class="callout-icon">i</span>Solution</summary>
+  <div class="callout-body">
+    <p>Use a seasonal subseries-style grouping by hour of week if the goal is to compare named positions such as Monday 09:00 and Tuesday 09:00 over time. A daily seasonal plot can reveal hour-of-day shape, but it mixes weekdays unless you also separate by day.</p>
+  </div>
+</details>
+</section>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="sec-relationships">
+<h2><span class="header-section-number">4</span> Relationships between variables: scatterplots and correlation<a class="anchor" href="#sec-relationships">#</a></h2>
+<p>When there is more than one variable, the reading introduces scatterplots, correlation, and scatterplot matrices <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. A <strong>scatterplot</strong> puts one variable on each axis; a <strong>scatterplot matrix</strong> repeats this idea for several pairs of variables.</p>
+<p>The reading defines correlation as a measure of the extent of a linear relationship between two variables <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. For paired observations $(x_t,y_t)$, the sample correlation is</p>
+
+<div class="math-display" id="eq-correlation">
+\[
+r=\frac{\sum\left(x_t-\bar{x}\right)\left(y_t-\bar{y}\right)}{\sqrt{\sum\left(x_t-\bar{x}\right)^2} \sqrt{\sum\left(y_t-\bar{y}\right)^2}}. \tag{1}
+\]
+</div>
+
+<p>Here $x_t$ and $y_t$ are the paired values at time $t$, while $\bar{x}$ and $\bar{y}$ are their sample means.</p>
+
+<div class="callout callout-warning">
+  <div class="callout-header"><span class="callout-icon">!</span>Correlation sees linear association</div>
+  <div class="callout-body">
+    <p>The reading illustrates that correlation measures linear relationship; therefore a scatterplot is still needed to see shape, outliers, and non-linear structure <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+  </div>
+</div>
+
+<div class="theorem" id="exm-correlation">
+  <p><span class="theorem-title">Example 3 (Calculating a small correlation (our example))</span> Take three paired observations: $(x,y)=(1,2),(2,4),(3,5)$.</p>
+  <p><strong>Step 1. Compute means.</strong> $\bar{x}=2$ and $\bar{y}=\frac{11}{3}$.</p>
+  <p><strong>Step 2. Compute centered values.</strong> For $x$: $-1,0,1$. For $y$: $-\frac{5}{3},\frac{1}{3},\frac{4}{3}$.</p>
+  <p><strong>Step 3. Use <a href="#eq-correlation">Equation&nbsp;1</a>.</strong></p>
+  <div class="math-display">
+\[
+\begin{aligned}
+r
+&=\frac{(-1)(-5/3)+0(1/3)+1(4/3)}{\sqrt{(-1)^2+0^2+1^2}\sqrt{(-5/3)^2+(1/3)^2+(4/3)^2}} \\
+&=\frac{3}{\sqrt{2}\sqrt{42/9}}
+\approx 0.982.
+\end{aligned}
+\]
+  </div>
+  <p><strong>Check.</strong> The value is close to $1$, matching the nearly straight increasing pattern of the three points.</p>
+</div>
+
+<div class="callout callout-note">
+  <div class="callout-header"><span class="callout-icon">i</span>Check yourself</div>
+  <div class="callout-body">
+    <p>If two variables have $r\approx 0$, what should you do before concluding there is “no relationship”?</p>
+  </div>
+</div>
+
+<details class="callout callout-note">
+  <summary><span class="callout-icon">i</span>Answer</summary>
+  <div class="callout-body">
+    <p>Look at the scatterplot. A near-zero correlation rules out strong <em>linear</em> association, but the plot may show a curved pattern or unusual observations.</p>
+  </div>
+</details>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="sec-acf">
+<h2><span class="header-section-number">5</span> Dependence over time: lag plots and autocorrelation<a class="anchor" href="#sec-acf">#</a></h2>
+<p>A time series can be related to its own past. The reading introduces <strong>lag plots</strong>: each graph shows $y_t$ against $y_{t-k}$ for lag $k$ <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. The autocorrelations are the correlations associated with these lag plots; for example, $r_1$ is the correlation between $y_t$ and $y_{t-1}$, and $r_2$ is the correlation between $y_t$ and $y_{t-2}$ <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+<p>For a series $y_1,\ldots,y_T$, the reading gives the autocorrelation at lag $k$ as</p>
+
+<div class="math-display" id="eq-acf">
+\[
+r_k=\frac{\sum_{i\in\{k+1,\ldots,T\}}\left(y_i-\bar{y}\right)\left(y_{i-k}-\bar{y}\right)}{\sum_{i\in\{1,\ldots,T\}}\left(y_i-\bar{y}\right)^2}, \tag{2}
+\]
+</div>
+
+<p>where $\bar{y}$ is the sample mean and $T$ is the length of the series <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+
+<figure id="fig-lag-acf">
+  <div class="diagram" role="img" aria-label="Diagram showing y_t and a lagged y_{t-k} feeding a lag plot, then the correlation r_k, then an ACF plot over many lags.">
+<script type="text/vnd.graphviz">
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  current [label="Current values\ny_t"];
+  lagged [label="Lagged values\ny_{t-k}"];
+  lagplot [label="Lag plot\ny_t vs y_{t-k}", fillcolor="#fff1d6", color="#d08b00"];
+  corr [label="Correlation\nr_k"];
+  acf [label="ACF plot\nbar for each lag k"];
+
+  current -> lagplot;
+  lagged -> lagplot;
+  lagplot -> corr;
+  corr -> acf [label="repeat for k = 1, 2, ..."];
+}
+</script>
+  </div>
+  <figcaption>Figure&nbsp;4: Lag plots and the ACF are two views of the same idea: compare the series with its shifted copy.</figcaption>
+</figure>
+
+<section id="sec-read-acf">
+<h3><span class="header-section-number">5.1</span> How to read an ACF plot<a class="anchor" href="#sec-read-acf">#</a></h3>
+<p>The reading gives three key rules <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>:</p>
+<ol>
+  <li>when the data have trend, autocorrelations for small lags tend to be large and positive;</li>
+  <li>when the data are seasonal, autocorrelations tend to be large and positive at seasonal lags, such as $12$ and $24$ for monthly data with yearly seasonality;</li>
+  <li>when the data are both trended and seasonal, autocorrelations tend to be large and positive at small lags and at seasonal lags.</li>
+</ol>
+
+<div class="theorem" id="exm-acf-reading">
+  <p><span class="theorem-title">Example 4 (Reading an ACF pattern (our example))</span> Suppose monthly data have large positive ACF bars at lags $1$, $2$, $12$, and $24$.</p>
+  <p><strong>Step 1. Interpret small lags.</strong> Large positive values at $1$ and $2$ suggest nearby observations are similar, which is consistent with trend.</p>
+  <p><strong>Step 2. Interpret seasonal lags.</strong> Large positive values at $12$ and $24$ match annual seasonality in monthly data.</p>
+  <p><strong>Step 3. Combine the evidence.</strong> The ACF pattern is consistent with a trended and seasonal series.</p>
+  <p><strong>Check.</strong> The seasonal period is $12$, so the repeated ACF peaks at $12$ and $24$ are exactly where <a href="#tbl-seasonal-periods">Table&nbsp;2</a> tells us to look.</p>
+</div>
+
+<div class="callout callout-tip">
+  <div class="callout-header"><span class="callout-icon">✓</span>Try it</div>
+  <div class="callout-body">
+    <p>Weekly data show strong positive autocorrelation at lags $52$ and $104$. What pattern does this suggest?</p>
+  </div>
+</div>
+
+<details class="callout callout-note">
+  <summary><span class="callout-icon">i</span>Solution</summary>
+  <div class="callout-body">
+    <p>It suggests yearly seasonality in weekly data, because the seasonal period is about $52$ weeks, and $104$ is two such periods.</p>
+  </div>
+</details>
+</section>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="sec-white-noise">
+<h2><span class="header-section-number">6</span> White noise and the ACF confidence band<a class="anchor" href="#sec-white-noise">#</a></h2>
+<p>The reading shows white noise and its ACF, then states that for white-noise data the sampling distribution of $r_k$ is asymptotically $N(0,1/T)$ <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. Therefore an approximate 95% confidence interval for $r_k$ is</p>
+
+<div class="math-display" id="eq-acf-ci">
+\[
+\pm \frac{1.96}{\sqrt{T}}, \tag{3}
+\]
+</div>
+
+<p>where $T$ is the length of the series <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>.</p>
+
+<p><strong>Syllabus bridge.</strong> The reading-supported fact is the white-noise ACF distribution and band in <a href="#eq-acf-ci">Equation&nbsp;3</a>. When later lectures ask whether a fitted model has left time dependence behind, this is the graphical ingredient to remember: an ACF pattern compatible with white noise should have most bars inside the approximate band. This page does not add a full residual-diagnostics procedure because the reading does not give one.</p>
+
+<div class="theorem" id="exm-ci">
+  <p><span class="theorem-title">Example 5 (ACF band width (our example))</span> A series has length $T=100$.</p>
+  <p><strong>Step 1. Substitute into <a href="#eq-acf-ci">Equation&nbsp;3</a>.</strong></p>
+  <div class="math-display">
+\[
+\frac{1.96}{\sqrt{100}}=\frac{1.96}{10}=0.196.
+\]
+  </div>
+  <p><strong>Step 2. Interpret.</strong> The approximate 95% white-noise band is from $-0.196$ to $0.196$.</p>
+  <p><strong>Step 3. Use visually.</strong> A lag with $r_k=0.40$ lies outside this band; a lag with $r_k=0.05$ lies inside it.</p>
+  <p><strong>Check.</strong> If $T$ increases, $\sqrt{T}$ increases, so the band becomes narrower.</p>
+</div>
+
+<div class="callout callout-note">
+  <div class="callout-header"><span class="callout-icon">i</span>Check yourself</div>
+  <div class="callout-body">
+    <p>For white noise with $T=400$, what is the approximate 95% ACF band?</p>
+  </div>
+</div>
+
+<details class="callout callout-note">
+  <summary><span class="callout-icon">i</span>Answer</summary>
+  <div class="callout-body">
+    <p>$1.96/\sqrt{400}=1.96/20=0.098$, so the band is approximately $[-0.098,0.098]$.</p>
+  </div>
+</details>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="sec-forecast-presentation">
+<h2><span class="header-section-number">7</span> Presenting forecasting results starts with the same graphics<a class="anchor" href="#sec-forecast-presentation">#</a></h2>
+<p>The syllabus asks you to present forecasting results. This reading does not give a separate forecast-display recipe. What it does give is the graphical vocabulary that a later forecast display will reuse: time plots, seasonal periods, anomalies, relationships and ACF checks <a class="citation" href="#ref-r1">(“02 - Time Series Graphics.md,” n.d.)</a>. The course-level bridge is simple: when communicating future values, keep the historical time scale and the relevant patterns visible, but treat this as an application of the reading’s graphics rather than a forecast rule stated in the reading.</p>
+
+<figure id="fig-forecast-bridge">
+  <div class="diagram" role="img" aria-label="Concept map connecting exploration, model checking and forecast communication.">
+<script type="text/vnd.graphviz">
+digraph G {
+  rankdir=TB;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  explore [label="Explore\ntime plot, seasonal plots"];
+  features [label="Name features\ntrend, seasonality, cycles"];
+  check [label="Check dependence\nlag plots and ACF"];
+  communicate [label="Communicate forecasts\non the same time scale", fillcolor="#fff1d6", color="#d08b00"];
+
+  explore -> features;
+  features -> check;
+  check -> communicate;
+  explore -> communicate [label="show history clearly"];
+}
+</script>
+  </div>
+  <figcaption>Figure&nbsp;5: How the graphics in this lecture prepare a forecast presentation.</figcaption>
+</figure>
+
+<p><a href="#fig-forecast-bridge">Figure&nbsp;5</a> is deliberately conservative: it connects this lecture’s plots to forecast communication without adding methods that are not in the reading.</p>
+
+<div class="callout callout-note">
+  <div class="callout-header"><span class="callout-icon">i</span>Check yourself</div>
+  <div class="callout-body">
+    <p>You are preparing to communicate future monthly values for a series with clear annual seasonality. Which feature from this lecture should remain visible in the historical part of the display?</p>
+  </div>
+</div>
+
+<details class="callout callout-note">
+  <summary><span class="callout-icon">i</span>Answer</summary>
+  <div class="callout-body">
+    <p>Keep the time scale and the annual seasonal pattern visible. Monthly data with yearly seasonality have period $12$, so the viewer should be able to compare future values with the repeating pattern seen in the historical time plot or seasonal graphics.</p>
+  </div>
+</details>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="sec-putting-it-together">
+<h2><span class="header-section-number">8</span> Putting it together<a class="anchor" href="#sec-putting-it-together">#</a></h2>
+
+<figure id="fig-concept-map">
+  <div class="diagram" role="img" aria-label="Concept map linking time plots, seasonal graphics, scatterplots, lag plots, ACF, trend, seasonality, cyclic behavior and white noise.">
+<script type="text/vnd.graphviz">
+digraph G {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#4a78b5", fillcolor="#eef4fb"];
+  edge [color="#666666", fontname="Helvetica", fontsize=10];
+
+  graphics [label="Time-series graphics"];
+  time [label="Time plot"];
+  seasonal [label="Seasonal graphics"];
+  scatter [label="Scatterplots and\nscatterplot matrices"];
+  lag [label="Lag plots"];
+  acf [label="ACF plot"];
+  trend [label="Trend"];
+  season [label="Seasonality"];
+  cycle [label="Cyclic movement"];
+  corr [label="Correlation"];
+  white [label="White-noise band\n±1.96/sqrt(T)"];
+
+  graphics -> time;
+  graphics -> seasonal;
+  graphics -> scatter;
+  graphics -> lag;
+  lag -> acf;
+  time -> trend;
+  time -> season;
+  time -> cycle;
+  seasonal -> season;
+  scatter -> corr;
+  acf -> trend [label="large small lags"];
+  acf -> season [label="large seasonal lags"];
+  acf -> white [label="compare bars"];
+}
+</script>
+  </div>
+  <figcaption>Figure&nbsp;6: Concept map for time-series graphics.</figcaption>
+</figure>
+
+<p>A good workflow is to move from broad to specific: use a time plot first, seasonal graphics when the period matters, scatterplots when variables relate, and lag/ACF graphics when dependence over time matters.</p>
+</section>
+
+<!-- ============ 9 ============ -->
+<section id="sec-summary">
+<h2><span class="header-section-number">9</span> Summary<a class="anchor" href="#sec-summary">#</a></h2>
+<div class="callout callout-important">
+  <div class="callout-header"><span class="callout-icon">!</span>What to remember</div>
+  <div class="callout-body">
+    <ul>
+      <li>Time plots are the starting point: they reveal patterns, unusual observations and changes over time.</li>
+      <li>Trend is long-term increase or decrease; seasonality repeats at a fixed known period; cyclic movement does not have a fixed frequency.</li>
+      <li>Seasonal plots compare positions within a season; seasonal subseries plots collect each season as its own small time series.</li>
+      <li>Correlation measures linear relationship, so always read it with a scatterplot.</li>
+      <li>Lag plots compare $y_t$ with $y_{t-k}$; the ACF records those correlations across many lags.</li>
+      <li>Trend tends to create large positive ACF at small lags; seasonality tends to create large positive ACF at seasonal lags.</li>
+      <li>For white noise, an approximate 95% ACF band is $\pm 1.96/\sqrt{T}$.</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="sec-key-terms">
+<h2><span class="header-section-number">10</span> Key terms<a class="anchor" href="#sec-key-terms">#</a></h2>
+<div id="tbl-key-terms">
+<div class="table-wrap">
+<table>
+  <colgroup><col style="width:28%"><col style="width:72%"></colgroup>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Time plot</td><td>A plot of a series value against time; the first view for patterns and unusual observations.</td></tr>
+    <tr><td>Trend</td><td>Long-term increase or decrease in the data; not necessarily linear.</td></tr>
+    <tr><td>Seasonal pattern</td><td>A regular pattern at fixed, known intervals such as yearly, monthly, weekly or daily.</td></tr>
+    <tr><td>Cyclic pattern</td><td>Rises and falls without fixed frequency, often lasting two or more years.</td></tr>
+    <tr><td>Seasonal period</td><td>The number of observations in one full repeating seasonal cycle, such as $12$ for monthly yearly seasonality.</td></tr>
+    <tr><td>Seasonal plot</td><td>A plot against time within each seasonal period, useful for seeing seasonal patterns and anomalies.</td></tr>
+    <tr><td>Seasonal subseries plot</td><td>A display that collects each season together as a separate time series to show seasonal pattern and change.</td></tr>
+    <tr><td>Scatterplot</td><td>A two-variable plot used to see relationships between variables.</td></tr>
+    <tr><td>Correlation</td><td>A measure of the extent of linear relationship between two variables.</td></tr>
+    <tr><td>Lag plot</td><td>A plot of $y_t$ against $y_{t-k}$ for a chosen lag $k$.</td></tr>
+    <tr><td>Autocorrelation</td><td>The correlation between a series and a lagged version of itself.</td></tr>
+    <tr><td>ACF plot</td><td>A plot of autocorrelations $r_k$ across several lags.</td></tr>
+    <tr><td>White noise</td><td>The benchmark series used in the reading for ACF confidence bands; its $r_k$ has approximate distribution $N(0,1/T)$.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="table-caption">Table&nbsp;4: Key terms for time-series graphics</p>
+</div>
+</section>
+
+<section id="refs">
+<h2>References<a class="anchor" href="#refs">#</a></h2>
+<div class="csl-entry" id="ref-r1">“02 - Time Series Graphics.md.” n.d.</div>
+</section>
+</main>
+</div>
+
+<script>
+// Graphviz diagrams
+Viz.instance().then(function (viz) {
+  document.querySelectorAll('script[type="text/vnd.graphviz"]').forEach(function (el) {
+    try {
+      el.replaceWith(viz.renderSVGElement(el.textContent));
+    } catch (e) {
+      var pre = document.createElement('pre');
+      pre.textContent = 'Diagram failed to render: ' + e.message;
+      el.replaceWith(pre);
+    }
+  });
+});
+
+// Interactive time-plot explorer
+(function () {
+  var form = document.getElementById('ts-controls');
+  var target = document.getElementById('ts-plot');
+  function draw() {
+    var trend = +form.trend.value, amplitude = +form.amplitude.value, noise = +form.noise.value;
+    form.querySelectorAll('label').forEach(function (l) {
+      l.querySelector('output').textContent = l.querySelector('input').value;
+    });
+    var pts = d3.range(1, 49).map(function (t) {
+      return { t: t, y: 20 + trend * t + amplitude * Math.sin(2 * Math.PI * t / 12) + noise * Math.sin(2.35 * t + 0.4) };
+    });
+    var chart = Plot.plot({
+      height: 320,
+      width: Math.min(target.clientWidth || 780, 820),
+      x: { label: "time t" },
+      y: { label: "value y_t", grid: true },
+      marks: [
+        Plot.ruleY([20], { stroke: "#bbbbbb" }),
+        Plot.line(pts, { x: "t", y: "y", stroke: "steelblue", strokeWidth: 2 }),
+        Plot.dot(pts, { x: "t", y: "y", fill: "steelblue", r: 2 })
+      ]
+    });
+    target.replaceChildren(chart);
+  }
+  form.addEventListener('input', draw);
+  window.addEventListener('resize', draw);
+  draw();
+})();
+
+// Highlight the current section in the TOC
+(function () {
+  var links = Array.from(document.querySelectorAll('nav#toc a'));
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+  var obs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        links.forEach(function (a) { a.classList.remove('active'); });
+        var a = byId[e.target.id];
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '0px 0px -75% 0px' });
+  Object.keys(byId).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) obs.observe(el);
+  });
+})();
+</script>
+</body>
+</html>
